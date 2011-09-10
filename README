@@ -11,19 +11,20 @@ The code is released under a BSD license.
 Basic Usage
 -----------
 
-import irsocket
+import irda
+
+# Enumerate IrDA Devices
+devs = irda.discover()
 
 # Create a new IrDA Socket
-sck = irsocket.irsocket()
-
-# Enumerate IrDA devices
-devs = sck.enum_devices()
+sck = irda.irsocket()
 
 # Connect to the first device
+sck.set_timeout(2000)
 sck.connect(devs[0]['addr'])
 
-# Read and write using similar methods to the native socket module
-sck.sendall('\x14')
+# Read and write using send(data) and recv(num_bytes)
+sck.send('\x14')
 sdat = sck.recv(4)
 data = unpack('<L', sdat)[0]
 

@@ -1,0 +1,26 @@
+Metadata-Version: 1.1
+Name: irda
+Version: 1.1
+Summary: IrDA socket interface for Python
+Home-page: http://asymworks.github.com/python-irda
+Download-url: http://github.com/asymworks/python-irda/tarball/master
+Author: J.P. Krauss
+Author-email: jkrauss@asymworks.com
+License: BSD
+Description: This module implements a lightweight IrDA socket interface for
+	Python.  It is modeled after and uses a similar interface to the 
+	default Python 'socket' module.  The code has been tested on Linux
+	and should work on Windows as well.
+Platform: Windows
+Linux
+Classifier: Development Status :: 4 - Beta
+Classifier: Environment :: Plugins
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: BSD License
+Classifier: Natural Language :: English
+Classifier: Operating System :: Microsoft :: Windows
+Classifier: Operating System :: POSIX :: Linux
+Classifier: Programming Language :: Python
+Classifier: Topic :: Software Development :: Libraries
+Classifier: Topic :: System :: Hardware
+Classifier: Topic :: System :: Networking

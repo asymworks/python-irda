@@ -1,9 +1,9 @@
 #!/usr/bin/env python2
 from distutils.core import setup, Extension
 
-module1 = Extension('irsocket', sources = ['src/irsocket.c'])
+module1 = Extension('irda', sources = ['src/irda.c', 'src/module.c'])
 
-setup(name = 'irsocket',
-	version = '1.0',
+setup(name = 'irda',
+	version = '1.1',
 	description = 'IrDA socket interface for Python',
 	ext_modules = [module1])

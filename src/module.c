@@ -171,7 +171,7 @@ static PyObject * irsocket_connect(PyIrDASocketObject * s, PyObject * args)
 	if (! PyArg_ParseTuple(args, "l|l:connect", &addr, &lsap))
 		return NULL;
 
-	fprintf(stderr, "irsocket_connect(%p)\n", s->socket);
+	//fprintf(stderr, "irsocket_connect(%p)\n", s->socket);
 
 	//FIXME: Py_BEGIN_ALLOW_THREADS cause a seg fault...
 	//Py_BEGIN_ALLOW_THREADS

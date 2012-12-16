@@ -2,7 +2,7 @@
 
 pkgname=python2-irda
 pkgver=1.1
-pkgrel=1
+pkgrel=2
 pkgdesc="IrDA extension module for Python"
 arch=(any)
 url="https://github.com/asymworks/python-irda"
@@ -20,5 +20,5 @@ install=
 
 package() {
 	cd "$srcdir/irda-$pkgver"
-	python2 setup.py install --root="$pkgdir/" --optimize=1
+	python2 setup.py install --root="$srcdir/irda-$pkgver/" --optimize=1
 }

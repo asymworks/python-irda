@@ -23,6 +23,20 @@
 #include <Python.h>
 #include "irda.h"
 
+#if defined(_WIN32) || defined(WIN32)
+#include <winsock2.h>
+#include <windows.h>
+#endif
+
+#if defined(_WIN32) || defined(WIN32)
+#if defined(_MSC_VER)
+typedef UINT32	uint32_t;
+typedef UINT8	uint8_t;
+#else
+#include <stddef.h>
+#endif
+#endif
+
 /* IrDA Socket Object Information */
 typedef struct {
     PyObject_HEAD
@@ -38,7 +52,7 @@ static PyObject * pyirda_timeout;
 /* Convenience Function to set IrDA Error */
 static PyObject * set_error(void)
 {
-#ifdef MS_WINDOWS
+#if defined(_WIN32) || defined(WIN32)
 	int err_no = WSAGetLastError();
 	if (err_no)
 		return PyErr_SetExcFromWindowsErr(pyirda_error, err_no);
@@ -65,6 +79,9 @@ void pyirda_discover_cb(unsigned int address, const char * name,
 
 static PyObject * pyirda_discover(PyObject * m)
 {
+	PyObject * list;
+	int ndevs;
+	
 	// Create a temporary socket for the bus enumeration
 	irda_t sock;
 
@@ -75,13 +92,11 @@ static PyObject * pyirda_discover(PyObject * m)
 	}
 
 	// Create the Result List
-	PyObject * list = PyList_New(0);
+	list = PyList_New(0);
 
 	// Run the Enumeration
-	int ndevs;
-
 	Py_BEGIN_ALLOW_THREADS
-	ndevs = irda_socket_discovery(sock, & pyirda_discover_cb, list);
+	ndevs = irda_socket_discover(sock, & pyirda_discover_cb, list);
 	Py_END_ALLOW_THREADS
 
 	// Handle Enumeration Error
@@ -586,7 +601,7 @@ static PyTypeObject irsocket_type =
 	PyObject_Del,								/* tp_free */
 };
 
-void os_cleanup()
+void os_cleanup(void)
 {
 	(void)irda_cleanup();
 }
@@ -619,6 +634,8 @@ suitable for communicating with Dive Computers"
 
 PyMODINIT_FUNC initirda(void)
 {
+	PyObject * m;
+	
 	if (! os_init())
 		return;
 
@@ -627,7 +644,6 @@ PyMODINIT_FUNC initirda(void)
 		return;
 
 	/* Initialize the Module */
-	PyObject * m;
 	m = Py_InitModule3("irda", pyirda_methods, pyirda_doc);
 	if (m == NULL)
 		return;

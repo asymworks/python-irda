@@ -26,11 +26,14 @@
  * http://www.divesoftware.org/libdc/
  */
 
+#include <stddef.h> // size_t
 #include <stdlib.h> // malloc, free
 #include <stdio.h>	// snprintf
-#include <time>h>   // clock
+#include <time.h>   // clock
 
-#ifdef MS_WINDOWS
+#if defined(_WIN32) || defined(WIN32)
+#include <assert.h>			// assert
+#include <stdio.h>			// _snprintf
 #include <winsock2.h>
 #include <windows.h>
 #include <af_irda.h>
@@ -49,10 +52,10 @@
 
 #if defined(_WIN32) || defined(WIN32) || defined(HAVE_POLL)
 // Windows doesn't have a limit on file descriptor value in select()
-#define IS_SELECTABLE(s) ((s)->timeout < 0)
+#define IS_SELECTABLE(s) ((s)->timeout > 0)
 #else
 // POSIX however does not allow the file descriptor to be above FD_SETSIZE in select()
-#define IS_SELECTABLE(s) ((((s)->fd >= 0) && ((s)->fd < FD_SETSIZE)) || ((s)->timeout < 0))
+#define IS_SELECTABLE(s) ((((s)->fd >= 0) && ((s)->fd < FD_SETSIZE)) || ((s)->timeout > 0))
 #endif
 
 #if defined(_WIN32) || defined(WIN32)
@@ -432,7 +435,7 @@ int internal_connect(irda_t s, const struct sockaddr * addr, socklen_t len, int 
 #if defined(_WIN32) || defined(WIN32)
 	if (s->timeout > 0)
 	{
-		if (rc < 0 && WSAGetLastError() == WSAEWOULDBLOCK && IS_SELECTABLE(s))
+		if ((rc < 0) && (WSAGetLastError() == WSAEWOULDBLOCK) && IS_SELECTABLE(s))
 		{
 			fd_set fds;
 			fd_set fds_exc;

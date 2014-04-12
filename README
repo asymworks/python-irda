@@ -4,7 +4,7 @@ python-irda : IrDA Socket Interface for Python
 Author: Jonathan Krauss
 E-Mail: jkrauss@asymworks.com
 
-This module implements a lightweight IrDA socket interface for Python. It is modeled after and uses a similar interface to the default Python 'socket' module.  The code has been tested on Linux and should work on Windows as well.
+This module implements a lightweight IrDA socket interface for Python. It is modeled after and uses a similar interface to the default Python 'socket' module.  The code has been tested on Linux and Windows 7 64bit.
 
 The code is released under a BSD license.
 

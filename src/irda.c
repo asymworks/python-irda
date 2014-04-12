@@ -28,6 +28,7 @@
 
 #include <stdlib.h> // malloc, free
 #include <stdio.h>	// snprintf
+#include <time>h>   // clock
 
 #ifdef MS_WINDOWS
 #include <winsock2.h>
@@ -46,14 +47,23 @@
 
 #include "irda.h"
 
-#ifdef MS_WINDOWS
-typedef SOCKET			 socket_t;
+#if defined(_WIN32) || defined(WIN32) || defined(HAVE_POLL)
+// Windows doesn't have a limit on file descriptor value in select()
+#define IS_SELECTABLE(s) ((s)->timeout < 0)
 #else
-typedef int				 socket_t;
+// POSIX however does not allow the file descriptor to be above FD_SETSIZE in select()
+#define IS_SELECTABLE(s) ((((s)->fd >= 0) && ((s)->fd < FD_SETSIZE)) || ((s)->timeout < 0))
+#endif
+
+#if defined(_WIN32) || defined(WIN32)
+typedef SOCKET			socket_t;
+typedef int 			socklen_t;
+#else
+typedef int				socket_t;
 #define INVALID_SOCKET	(socket_t)(-1)
 #endif
 
-struct irda_t
+struct _irda_t
 {
 	socket_t	fd;
 	long		timeout;
@@ -61,7 +71,7 @@ struct irda_t
 
 int irda_errcode(void)
 {
-#ifdef MS_WINDOWS
+#if defined(_WIN32) || defined(WIN32)
 	return WSAGetLastError();
 #else
 	return errno;
@@ -70,11 +80,11 @@ int irda_errcode(void)
 
 const char * irda_errmsg(void)
 {
-#ifdef MS_WINDOWS
+#if defined(_WIN32) || defined(WIN32)
 	static char buffer[256] = { 0 };
 	unsigned int size = sizeof(buffer) / sizeof(char);
 
-	DWORD errcode = WSAGetLastError();
+	int errcode = WSAGetLastError();
 	DWORD rc = FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
 			NULL, errcode, 0, buffer, size, NULL);
 
@@ -100,7 +110,7 @@ const char * irda_errmsg(void)
 
 int irda_init(void)
 {
-#ifdef MS_WINDOWS
+#if defined(_WIN32) || defined(WIN32)
 	WSADATA wsaData;
 	WORD wVersionRequested = MAKEWORD(2, 2);
 	if (WSAStartup(wVersionRequested, &wsaData) != 0)
@@ -123,7 +133,7 @@ int irda_init(void)
 
 int irda_cleanup(void)
 {
-#ifdef MS_WINDOWS
+#if defined(_WIN32) || defined(WIN32)
 	if (WSACleanup() != 0)
 		return -1;
 #endif
@@ -131,17 +141,38 @@ int irda_cleanup(void)
 	return 0;
 }
 
+#if defined(_WIN32) || defined(WIN32)
+#define CHECK_IRDA_HANDLE(s) \
+	if (s == NULL) \
+	{ \
+		SetLastError(ERROR_INVALID_HANDLE); \
+		return -1; \
+	}
+#else
+#define CHECK_IRDA_HANDLE(s) \
+	if (s == NULL) \
+	{ \
+		errno = EINVAL; \
+		return -1; \
+	}
+#endif
+
 int irda_socket_open(irda_t * s)
 {
-	if (s == NULL)
+	irda_t device;
+	CHECK_IRDA_HANDLE(s)
+
+	device = (irda_t)malloc(sizeof(struct _irda_t));
+	if (device == NULL)
 	{
-		errno = EINVAL;
+#if defined(_WIN32) || defined(WIN32)
+		SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+#else
+		errno = ENOMEM;
+#endif
+
 		return -1;
 	}
-
-	irda_t device = (irda_t)malloc(sizeof(irda_t));
-	if (device == NULL)
-		return -1;
 
 	device->timeout = -1;
 	device->fd = socket(AF_IRDA, SOCK_STREAM, 0);
@@ -149,7 +180,7 @@ int irda_socket_open(irda_t * s)
 	{
 		free (device);
 		return -1;
-	}
+	};
 
 	*s = device;
 
@@ -158,15 +189,11 @@ int irda_socket_open(irda_t * s)
 
 int irda_socket_close(irda_t s)
 {
-	if (s == NULL)
-	{
-		errno = EINVAL;
-		return -1;
-	}
+	CHECK_IRDA_HANDLE(s)
 
 	shutdown(s->fd, 0);
 
-#ifdef MS_WINDOWS
+#if defined(_WIN32) || defined(WIN32)
 	if (closesocket(s->fd) != 0)
 #else
 	if (close(s->fd) != 0)
@@ -182,28 +209,28 @@ int irda_socket_close(irda_t s)
 
 int irda_socket_set_timeout(irda_t s, long timeout)
 {
-	if (s == NULL)
-	{
-		errno = EINVAL;
-		return -1;
-	}
+#if defined(_WIN32) || defined(WIN32)
+	int noblock;
+#else
+	int delay_flag;
+#endif
+
+	CHECK_IRDA_HANDLE(s)
 
 	if (timeout < 0)
 		s->timeout = -1;
 	else
 		s->timeout = timeout;
 
-#ifdef MS_WINDOWS
-	int noblock = (s->timeout >= 0);
+#if defined(_WIN32) || defined(WIN32)
+	noblock = (s->timeout >= 0);
 	ioctlsocket(s->fd, FIONBIO, (u_long*)&noblock);
 #else
-	int delay_flag = fcntl(s->fd, F_GETFL, 0);
-
+	delay_flag = fcntl(s->fd, F_GETFL, 0);
 	if (s->timeout < 0)
 		delay_flag &= (~O_NONBLOCK);
 	else
 		delay_flag |= O_NONBLOCK;
-
 	fcntl(s->fd, F_SETFL, delay_flag);
 #endif
 
@@ -212,11 +239,7 @@ int irda_socket_set_timeout(irda_t s, long timeout)
 
 int irda_socket_timeout(irda_t s, long * timeout)
 {
-	if (s == NULL)
-	{
-		errno = EINVAL;
-		return -1;
-	}
+	CHECK_IRDA_HANDLE(s)
 
 	* timeout = s->timeout;
 
@@ -226,22 +249,21 @@ int irda_socket_timeout(irda_t s, long * timeout)
 #define DISCOVER_MAX_DEVICES 16	// Maximum number of devices.
 #define DISCOVER_MAX_RETRIES 4	// Maximum number of retries.
 
-#ifdef MS_WINDOWS
+#if defined(_WIN32) || defined(WIN32)
 #define DISCOVER_BUFSIZE sizeof (DEVICELIST) + sizeof (IRDA_DEVICE_INFO) * (DISCOVER_MAX_DEVICES - 1)
+#define NUMDEVICES numDevice
 #else
 #define DISCOVER_BUFSIZE sizeof (struct irda_device_list) +	sizeof (struct irda_device_info) * (DISCOVER_MAX_DEVICES - 1)
+#define NUMDEVICES len
 #endif
 
-int irda_socket_discovery(irda_t s, irda_callback_t cb, void * userdata)
+int irda_socket_discover(irda_t s, irda_callback_t cb, void * userdata)
 {
-	if (s == NULL)
-	{
-		errno = EINVAL;
-		return -1;
-	}
-
+	int rc = 0;
+	unsigned int nretries = 0;
 	unsigned char data[DISCOVER_BUFSIZE] = { 0 };
-#ifdef MS_WINDOWS
+
+#if defined(_WIN32) || defined(WIN32)
 	DEVICELIST * list = (DEVICELIST *)data;
 	int size = sizeof(data);
 #else
@@ -249,22 +271,17 @@ int irda_socket_discovery(irda_t s, irda_callback_t cb, void * userdata)
 	socklen_t size = sizeof(data);
 #endif
 
-	int rc = 0;
-	unsigned int nretries = 0;
-	while ((rc = getsockopt(s->fd, SOL_IRLMP, IRLMP_ENUMDEVICES, (char *)data, & size)) != 0 ||
-#ifdef MS_WINDOWS
-		list->numDevice == 0)
-#else
-		list->len == 0)
-#endif
+	CHECK_IRDA_HANDLE(s)
+
+	while ((rc = getsockopt(s->fd, SOL_IRLMP, IRLMP_ENUMDEVICES, (char *)data, & size)) != 0 || list->NUMDEVICES == 0)
 	{
 		// Check for an error in getsockopt() other than socket timeout
-#ifdef MS_WINDOWS
+#if defined(_WIN32) || defined(WIN32)
 		if (rc != 0 && WSAGetLastError() != WSAEWOULDBLOCK)
 #else
 		if (rc != 0 && errno != EAGAIN)
 #endif
-				return -1;
+			return -1;
 
 		// Give up after DISCOVER_MAX_RETRIES
 		if (nretries++ >= DISCOVER_MAX_RETRIES)
@@ -274,7 +291,7 @@ int irda_socket_discovery(irda_t s, irda_callback_t cb, void * userdata)
 		size = sizeof (data);
 
 		// Wait 1 second and retry
-#ifdef MS_WINDOWS
+#if defined(_WIN32) || defined(WIN32)
 		Sleep(1000);
 #else
 		sleep(1);
@@ -285,7 +302,7 @@ int irda_socket_discovery(irda_t s, irda_callback_t cb, void * userdata)
 	{
 		unsigned int i;
 
-#ifdef _WIN32
+#if defined(_WIN32) || defined(WIN32)
 		for (i = 0; i < list->numDevice; ++i) {
 			unsigned int address =
 						(list->Device[i].irdaDeviceID[0] << 24) +
@@ -317,62 +334,183 @@ int irda_socket_discovery(irda_t s, irda_callback_t cb, void * userdata)
 #endif
 	}
 
-#ifdef MS_WINDOWS
-	return list->numDevice;
-#else
-	return list->len;
-#endif
+	return list->NUMDEVICES;
 }
 
-int internal_connect(irda_t s, const struct sockaddr * addr, socklen_t len, int * timeout)
+/*
+ * Taken from Python sockets library.
+ *
+ * Do a select()/poll() on the socket, if necessary (sock_timeout > 0).
+ * The argument writing indicates the direction.
+ * Returns 1 on timeout, -1 on error, 0 otherwise.
+ */
+int internal_select(irda_t s, int writing, long interval)
 {
-	int rc = connect(s->fd, addr, len);
+	int n;
 
-	if (timeout != NULL)
-		* timeout = 0;
+	// If socket is non-blocking, nothing to do
+	if ((s->timeout <= 0) || (s->fd < 0))
+		return 0;
 
-	if (s->timeout > 0)
+	// If interval is negative, "auto-timeout"
+	if (interval < 0)
+		return 1;
+
+#ifdef HAVE_POLL
 	{
-		if (rc < 0 && errno == EINPROGRESS)
-		{
-			struct pollfd pollfd;
-			pollfd.fd = s->fd;
-			pollfd.events = POLLOUT;
+		struct pollfd pollfd;
+		pollfd.fd = s->fd;
+		pollfd.events = writing ? POLLOUT : POLLIN;
 
-			int rcpoll = poll(& pollfd, 1, s->timeout);
-			if (rcpoll < 0)
-				return -1;
-			else if (rcpoll == 0)
-			{
-				if (timeout != NULL)
-					* timeout = 1;
-
-				return -1;
-			}
-
-			socklen_t rc_size = sizeof rc;
-			(void)getsockopt(s->fd, SOL_SOCKET, SO_ERROR, &rc, &rc_size);
-			if ((rc != 0) && (rc != EISCONN))
-				return -1;
-
-		}
+		n = poll(& pollfd, 1, s->timeout);
 	}
-	else if (rc < 0)
+#else
+	{
+		fd_set fds;
+		struct timeval tv;
+		tv.tv_sec = interval / 1000;
+		tv.tv_usec = (interval % 1000) * 1000;
+
+		FD_ZERO(& fds);
+		FD_SET(s->fd, &fds);
+
+		if (writing)
+			n = select(s->fd+1, NULL, & fds, NULL, & tv);
+		else
+			n = select(s->fd+1, & fds, NULL, NULL, & tv);
+	}
+#endif
+
+	if (n < 0)
 		return -1;
+	if (n == 0)
+		return 1;
 
 	return 0;
 }
 
-int irda_socket_connect_name(irda_t s, unsigned int address, const char * name, int * timeout)
+long ms_time(void)
 {
-	if (s == NULL)
-	{
-		errno = EINVAL;
-		return -1;
+	clock_t t = clock();
+	return (t * 1000 / CLOCKS_PER_SEC);
+}
+
+#if defined(_WIN32) || defined(WIN32)
+#ifndef WSAEAGAIN
+#define WSAEAGAIN WSAEWOULDBLOCK
+#endif
+#define CHECK_ERRNO(expected) \
+	(WSAGetLastError() == WSA ## expected)
+#else
+#define CHECK_ERRNO(expected) \
+	(errno == expected)
+#endif
+
+#define BEGIN_SELECT_LOOP(s) \
+	{ \
+		long deadline, interval = s->timeout; \
+		int has_timeout = (s->timeout > 0); \
+		if (has_timeout) \
+			deadline = ms_time() + s->timeout; \
+		while (1) { \
+			errno = 0;
+
+#define END_SELECT_LOOP(s) \
+			if (! has_timeout || (! CHECK_ERRNO(EWOULDBLOCK) && ! CHECK_ERRNO(EAGAIN))) \
+				break; \
+			interval = deadline - ms_time(); \
+		} \
 	}
 
-#ifdef MS_WINDOWS
+int internal_connect(irda_t s, const struct sockaddr * addr, socklen_t len, int * timeoutp)
+{
+	int rc, timeout;
+
+	timeout = 0;
+	rc = connect(s->fd, addr, len);
+
+#if defined(_WIN32) || defined(WIN32)
+	if (s->timeout > 0)
+	{
+		if (rc < 0 && WSAGetLastError() == WSAEWOULDBLOCK && IS_SELECTABLE(s))
+		{
+			fd_set fds;
+			fd_set fds_exc;
+			struct timeval tv;
+			tv.tv_sec = (s->timeout / 1000);
+			tv.tv_usec = (s->timeout % 1000) * 1000;
+
+			FD_ZERO(& fds);
+			FD_SET(s->fd, & fds);
+			FD_ZERO(& fds_exc);
+			FD_SET(s->fd, & fds_exc);
+
+			rc = select(s->fd+1, NULL, & fds, & fds_exc, & tv);
+			if (rc == 0)
+			{
+				rc = WSAEWOULDBLOCK;
+				timeout = 1;
+			}
+			else if (rc > 0)
+			{
+				if (FD_ISSET(s->fd, & fds))
+					rc = 0;
+				else
+				{
+					int rc_size = sizeof rc;
+					assert(FD_ISSET(s->fd, & fds_exc));
+					if (getsockopt(s->fd, SOL_SOCKET, SO_ERROR, (char *)(& rc), & rc_size) == 0)
+						WSASetLastError(rc);
+					else
+						rc = WSAGetLastError();
+				}
+			}
+		}
+	}
+
+	if (rc < 0)
+		rc = WSAGetLastError();
+#else
+	if (s->timeout > 0)
+	{
+		if (rc < 0 && errno == EINPROGRESS && IS_SELECTABLE(s))
+		{
+			timeout = internal_select(s, 1, s->timeout);
+			if (timeout == 0)
+			{
+				socklen_t rc_size = sizeof rc;
+				(void)getsockopt(s->fd, SOL_SOCKET, SO_ERROR, & rc, & rc_size);
+				if (rc == EISCONN)
+					rc = 0;
+
+				errno = rc;
+			}
+			else if (timeout == -1)
+				rc = errno;
+			else
+				rc = EWOULDBLOCK;
+		}
+	}
+
+	if (rc < 0)
+		rc = errno;
+#endif
+
+	* timeoutp = timeout;
+	return rc;
+}
+
+int irda_socket_connect_name(irda_t s, unsigned int address, const char * name, int * timeout)
+{
+#if defined(_WIN32) || defined(WIN32)
 	SOCKADDR_IRDA peer;
+#else
+	struct sockaddr_irda peer;
+#endif
+
+	CHECK_IRDA_HANDLE(s)
+
+#if defined(_WIN32) || defined(WIN32)
 	peer.irdaAddressFamily = AF_IRDA;
 	peer.irdaDeviceID[0] = (address >> 24) & 0xFF;
 	peer.irdaDeviceID[1] = (address >> 16) & 0xFF;
@@ -383,7 +521,6 @@ int irda_socket_connect_name(irda_t s, unsigned int address, const char * name, 
 	else
 		memset(peer.irdaServiceName, 0x00, 25);
 #else
-	struct sockaddr_irda peer;
 	peer.sir_family = AF_IRDA;
 	peer.sir_addr = address;
 	if (name)
@@ -392,149 +529,175 @@ int irda_socket_connect_name(irda_t s, unsigned int address, const char * name, 
 		memset(peer.sir_name, 0x00, 25);
 #endif
 
-	if (internal_connect(s, (struct sockaddr *) &peer, sizeof(peer), timeout) != 0)
-		return -1;
-
-	return 0;
+	return internal_connect(s, (struct sockaddr *) &peer, sizeof(peer), timeout);
 }
 
 int irda_socket_connect_lsap(irda_t s, unsigned int address, unsigned int lsap, int * timeout)
 {
-	if (s == NULL)
-	{
-		errno = EINVAL;
-		return -1;
-	}
-
-#ifdef MS_WINDOWS
+#if defined(_WIN32) || defined(WIN32)
 	SOCKADDR_IRDA peer;
+#else
+	struct sockaddr_irda peer;
+#endif
+
+	CHECK_IRDA_HANDLE(s)
+
+#if defined(_WIN32) || defined(WIN32)
 	peer.irdaAddressFamily = AF_IRDA;
 	peer.irdaDeviceID[0] = (address >> 24) & 0xFF;
 	peer.irdaDeviceID[1] = (address >> 16) & 0xFF;
 	peer.irdaDeviceID[2] = (address >>  8) & 0xFF;
 	peer.irdaDeviceID[3] = (address      ) & 0xFF;
-	snprintf(peer.irdaServiceName, 25, "LSAP-SEL%u", lsap);
+	_snprintf(peer.irdaServiceName, 25, "LSAP-SEL%u", lsap);
 #else
-	struct sockaddr_irda peer;
 	peer.sir_family = AF_IRDA;
 	peer.sir_addr = address;
 	peer.sir_lsap_sel = lsap;
 	memset(peer.sir_name, 0x00, 25);
 #endif
 
-	if (internal_connect(s, (struct sockaddr *) &peer, sizeof(peer), timeout) != 0)
-		return -1;
-
-	return 0;
+	return internal_connect(s, (struct sockaddr *) &peer, sizeof(peer), timeout);
 }
 
 int irda_socket_available(irda_t s)
 {
-	if (s == NULL)
-	{
-		errno = EINVAL;
-		return -1;
-	}
-
-#ifdef MS_WINDOWS
+#if defined(_WIN32) || defined(WIN32)
 	unsigned long bytes = 0;
-	if (ioctlsocket(device->fd, FIONREAD, &bytes) != 0)
 #else
 	int bytes = 0;
-	if (ioctl(s->fd, FIONREAD, &bytes) != 0)
 #endif
+
+	CHECK_IRDA_HANDLE(s)
+
+#if defined(_WIN32) || defined(WIN32)
+	if (ioctlsocket(s->fd, FIONREAD, &bytes) != 0)
 		return -1;
+#else
+	if (ioctl(s->fd, FIONREAD, &bytes) != 0)
+		return -1;
+#endif
 
 	return bytes;
 }
 
-int irda_socket_read(irda_t s, void * data, ssize_t * size, int * timeout)
+int irda_socket_read(irda_t s, void * data, size_t * size, int * timeoutp)
 {
-	if ((s == NULL) || (size == NULL))
+	int timeout;
+
+#if defined(_WIN32) || defined(WIN32)
+	int outlen = 0;
+#else
+	ssize_t outlen = 0;
+#endif
+
+	CHECK_IRDA_HANDLE(s)
+
+	if (data == NULL || size == NULL)
 	{
+#if defined(_WIN32) || defined(WIN32)
+		SetLastError(ERROR_INVALID_HANDLE);
+		return -1;
+#else
 		errno = EINVAL;
 		return -1;
+#endif
 	}
 
-	struct pollfd pollfd;
-	pollfd.fd = s->fd;
-	pollfd.events = POLLIN;
-
-	ssize_t nbytes = 0;
-	while (nbytes < (* size))
+	if (! IS_SELECTABLE(s))
 	{
-		int rc = poll(& pollfd, 1, s->timeout);
-		if (rc < 0)
-		{
-			// Error during poll()
-			* size = nbytes;
-			return -1;
-		}
-		else if (rc == 0)
-		{
-			// Timeout during poll()
-			if (timeout != NULL)
-				* timeout = 1;
-			break;
-		}
-
-		int n = recv (s->fd, (char *)data + nbytes, (* size) - nbytes, 0);
-		if (n < 0)
-		{
-			// Error during recv()
-			* size = nbytes;
-			return -1;
-		}
-		else if (n == 0)
-		{
-			// EOF reached.
-			break;
-		}
-
-		nbytes += n;
+#if defined(_WIN32) || defined(WIN32)
+		SetLastError(ERROR_NOT_SUPPORTED);
+		return -1;
+#else
+		errno = EINVAL;
+		return -1;
+#endif
 	}
 
-	* size = nbytes;
+	BEGIN_SELECT_LOOP(s)
+	timeout = internal_select(s, 0, interval);
+	if (! timeout)
+		outlen = recv(s->fd, (char *)data, (* size), 0);
+
+	if (timeout == 1)
+	{
+		if (timeoutp != NULL)
+			* timeoutp = 1;
+
+		break;
+	}
+	END_SELECT_LOOP(s)
+
+	if (outlen < 0)
+		return -1;
+
+	* size = (size_t)outlen;
 	return 0;
 }
 
-int irda_socket_write(irda_t s, const void * data, ssize_t * size, int * timeout)
+int irda_socket_write(irda_t s, const void * data, size_t * size, int * timeoutp)
 {
-	if ((s == NULL) || (size == NULL))
+	int timeout = 0;
+
+#if defined(_WIN32) || defined(WIN32)
+	unsigned int nbytes = 0;
+#else
+	size_t nbytes = 0;
+#endif
+
+	CHECK_IRDA_HANDLE(s)
+
+	if (data == NULL || size == NULL)
 	{
+#if defined(_WIN32) || defined(WIN32)
+		SetLastError(ERROR_INVALID_HANDLE);
+		return -1;
+#else
 		errno = EINVAL;
 		return -1;
+#endif
 	}
 
-	struct pollfd pollfd;
-	pollfd.fd = s->fd;
-	pollfd.events = POLLOUT;
+	if (! IS_SELECTABLE(s))
+	{
+#if defined(_WIN32) || defined(WIN32)
+		SetLastError(ERROR_NOT_SUPPORTED);
+		return -1;
+#else
+		errno = EINVAL;
+		return -1;
+#endif
+	}
 
-	ssize_t nbytes = 0;
 	while (nbytes < (* size))
 	{
-		int rc = poll(& pollfd, 1, s->timeout);
-		if (rc < 0)
+		int n;
+
+		BEGIN_SELECT_LOOP(s)
+		timeout = internal_select(s, 1, interval);
+		if (! timeout)
+			n = send(s->fd, (char*)data + nbytes, (* size) - nbytes, 0);
+
+		if (timeout == 1)
 		{
-			// Error during poll()
-			* size = nbytes;
-			return -1;
-		}
-		else if (rc == 0)
-		{
-			// Timeout during poll()
-			if (timeout != NULL)
-				* timeout = 1;
+			if (timeoutp != NULL)
+				* timeoutp = 1;
+
 			break;
 		}
+		END_SELECT_LOOP(s)
 
-		int n = send (s->fd, (char*)data + nbytes, (* size) - nbytes, 0);
 		if (n < 0)
 		{
-			// Error during send()
-			* size = nbytes;
+			// Error in send()
+			if (size != NULL)
+				* size = nbytes;
+
 			return -1;
 		}
+
+		if (n == 0)
+			break;
 
 		nbytes += n;
 	}

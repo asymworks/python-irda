@@ -33,10 +33,20 @@
 extern "C" {
 #endif /* __cplusplus */
 
+// ssize_t for Windows
+#if defined(_WIN32) || defined(WIN32)
+#if defined(_MSC_VER)
+#include <BaseTsd.h>
+typedef SSIZE_T 	ssize_t;
+#else
+#include <stddef.h>
+#endif
+#endif
+
 /**
  * @brief IrDA Socket Handle Type
  */
-typedef struct irda_t * irda_t;
+typedef struct _irda_t * irda_t;
 
 /**
  * @brief IrDA Discovery Callback Function Type
@@ -185,7 +195,7 @@ int irda_socket_available(irda_t s);
  * of bytes read.  In case of timeout or error this may be less than the passed
  * size value.
  */
-int irda_socket_read(irda_t s, void * data, ssize_t * size, int * timeout);
+int irda_socket_read(irda_t s, void * data, ssize_t * size, int * timeoutp);
 
 /**
  * @brief Write data to the IrDA Socket
@@ -202,7 +212,7 @@ int irda_socket_read(irda_t s, void * data, ssize_t * size, int * timeout);
  * of bytes written.  In case of timeout or error this may be less than the
  * passed size value.
  */
-int irda_socket_write(irda_t s, const void * data, ssize_t * size, int * timeout);
+int irda_socket_write(irda_t s, const void * data, ssize_t * size, int * timeoutp);
 
 #ifdef __cplusplus
 }

@@ -1,3 +1,5 @@
+** AS OF JULY 2021 THIS REPOSITORY HAS BEEN SET TO ARCHIVE MODE AS THE LIBRARY IS NOT CURRENTLY MAINTAINED **
+
 python-irda : IrDA Socket Interface for Python
 ----------------------------------------------
 
@@ -7,11 +9,6 @@ E-Mail: jkrauss@asymworks.com
 This module implements a lightweight IrDA socket interface for Python. It is modeled after and uses a similar interface to the default Python 'socket' module.  The code has been tested on Linux and Windows 7 64bit.
 
 The code is released under a BSD license.
-
-July 2021 Update
-----------------
-
-*This library is currently unmaintained, and the repository has been set to archival mode.*
 
 Basic Usage
 -----------

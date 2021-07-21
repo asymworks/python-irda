@@ -8,6 +8,11 @@ This module implements a lightweight IrDA socket interface for Python. It is mod
 
 The code is released under a BSD license.
 
+July 2021 Update
+----------------
+
+*This library is currently unmaintained, and the repository has been set to archival mode.*
+
 Basic Usage
 -----------
 
@@ -38,6 +43,30 @@ Run the following commands (or equivalents) to build and install irsocket:
 
 $ python setup.py build
 $ sudo python setup.py install
+
+Building on Windows 10
+======================
+
+Timmy from Sweden has provided the following build instructions for Windows 10:
+
+OS: Windows 10
+Python version: 2.7.18, x86.
+
+- Enable "IrDA IR" in Windows 10 under "Apps and functions" > "Optional features".
+
+- Run Visual C++ Build Tools (vs_buildtools__819586963.1626546045.exe).
+
+Tick "Desktop development with C++" in the left section.
+
+If you only want the absolutely necessary tools for the purpose of building the IrDA module, tick only "MSVC v142 - VS 2019 C++ x64/x86 build tools (Latest)" and "Windows 10 SDK (10.0.19041.0)" in the right section.
+
+- Edit the file "c:\(Python 2.7)\Lib\distutils\msvc9compiler.py"
+Make the function find_vcvarsall() immediately return "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\BuildTools\\VC\\Auxiliary\\Build\\vcvarsall.bat"
+
+- Make sure that you build/install the module under Python 2 if you have multiple versions on your system.
+py -2 setup.py build
+and
+py -2 setup.py install
 
 Bugs/Additions
 --------------
